@@ -1,5 +1,5 @@
 // For Expo Go: Using your computer's IP address
-const API_URL = 'http://192.168.0.102:3000/api';
+const API_URL = 'https://proteindock-production.up.railway.app/api';
 
 export const api = {
   // Auth
