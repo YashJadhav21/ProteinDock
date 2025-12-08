@@ -14,6 +14,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    message: 'ProteinDock API Server',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      proteins: '/api/proteins',
+      ligands: '/api/ligands',
+      docking: '/api/docking',
+      vinaStatus: '/api/docking/vina-status'
+    },
+    documentation: 'https://github.com/YashJadhav21/ProteinDock'
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/proteins', proteinRoutes);
