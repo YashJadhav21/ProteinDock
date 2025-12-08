@@ -11,9 +11,15 @@ def setup_vina_environment():
     Check if Vina is available (binary or Python package)
     """
     import subprocess
+    import platform
     
-    # Check for vina.exe binary first (Windows)
-    vina_bin_path = Path(__file__).parent / 'vina_bin' / 'vina.exe'
+    # Check for vina binary (Windows: vina.exe, Linux: vina)
+    vina_bin_dir = Path(__file__).parent / 'vina_bin'
+    if platform.system() == 'Windows':
+        vina_bin_path = vina_bin_dir / 'vina.exe'
+    else:
+        vina_bin_path = vina_bin_dir / 'vina'
+    
     if vina_bin_path.exists():
         try:
             result = subprocess.run([str(vina_bin_path), '--version'], 
@@ -266,7 +272,12 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
             raise Exception(f"Ligand file not found: {ligand_pdbqt}")
         
         # Get Vina binary path
-        vina_bin_path = Path(__file__).parent / 'vina_bin' / 'vina.exe'
+        import platform
+        vina_bin_dir = Path(__file__).parent / 'vina_bin'
+        if platform.system() == 'Windows':
+            vina_bin_path = vina_bin_dir / 'vina.exe'
+        else:
+            vina_bin_path = vina_bin_dir / 'vina'
         
         if not vina_bin_path.exists():
             # Try Python vina as fallback
