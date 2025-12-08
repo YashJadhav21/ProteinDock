@@ -1,0 +1,11 @@
+receptor = C:\ProteinDock\backend\docking_jobs\69317d2ef655f679c76c9cae\receptor.pdbqt
+ligand = C:\ProteinDock\backend\docking_jobs\69317d2ef655f679c76c9cae\ligand.pdbqt
+center_x = -9.5
+center_y = 11
+center_z = -5
+size_x = 22
+size_y = 22
+size_z = 22
+exhaustiveness = 8
+num_modes = 9
+out = C:\ProteinDock\backend\docking_jobs\69317d2ef655f679c76c9cae\ligand_out_test.pdbqt

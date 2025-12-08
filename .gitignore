@@ -1,0 +1,84 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+__tests__/__snapshots__/
+
+# Production
+build/
+dist/
+
+# Expo
+.expo/
+.expo-shared/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+
+# Docking temporary files
+backend/docking_temp/
+backend/docking_jobs/*/
+!backend/docking_jobs/.gitkeep
+backend/quick_test_output/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Vina binaries (optional - recommend keeping)
+# backend/vina_bin/
+
+# Large files
+*.pdb
+*.pdbqt
+*.mol2
+!backend/1hsg_receptor_proper.pdbqt
+
+# Documentation artifacts
+*.pdf
+*.docx

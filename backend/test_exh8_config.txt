@@ -1,0 +1,12 @@
+receptor = C:\ProteinDock\backend\docking_jobs\6931a9ade7f9cde5a3c9895f\receptor.pdbqt
+ligand = C:\ProteinDock\backend\docking_jobs\6931a9ade7f9cde5a3c9895f\ligand.pdbqt
+center_x = 13.1
+center_y = 22.5
+center_z = 5.6
+size_x = 25
+size_y = 20
+size_z = 19
+exhaustiveness = 8
+cpu = 4
+num_modes = 9
+out = C:\ProteinDock\backend\test_exh8_out.pdbqt
