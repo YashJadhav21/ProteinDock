@@ -1,2 +1,14 @@
 [phases.setup]
-nixPkgs = ["python311", "nodejs_20"]
+nixPkgs = ["python311", "python311Packages.pip", "nodejs_20", "curl"]
+
+[phases.install]
+cmds = [
+  "chmod +x install.sh",
+  "bash install.sh"
+]
+
+[phases.build]
+cmds = ["echo 'Build complete'"]
+
+[start]
+cmd = "cd backend && node server.js"

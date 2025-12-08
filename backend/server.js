@@ -25,7 +25,16 @@ app.get('/api/health', (req, res) => {
 });
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
+const mongoUri = process.env.MONGODB_URI;
+
+if (!mongoUri) {
+  console.error('❌ ERROR: MONGODB_URI environment variable is not set!');
+  console.error('📝 Please set MONGODB_URI in Railway environment variables');
+  console.error('💡 Get MongoDB URI from: https://mongodb.com/cloud/atlas');
+  process.exit(1);
+}
+
+mongoose.connect(mongoUri)
   .then(() => {
     console.log('✅ Connected to MongoDB');
     const PORT = process.env.PORT || 3000;
