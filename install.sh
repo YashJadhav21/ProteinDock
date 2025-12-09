@@ -52,7 +52,7 @@ pip install --no-cache-dir -r backend/requirements.txt
 
 # Verify Python packages
 echo "🔍 Verifying Python packages..."
-python3 -c "import Bio; import numpy; print('✅ BioPython and NumPy installed')"
+python3 -c "import Bio; import numpy; import rdkit; print('✅ BioPython, NumPy, and RDKit installed')"
 
 # Install Node dependencies
 echo "📦 Installing Node.js dependencies..."

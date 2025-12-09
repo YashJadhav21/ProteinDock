@@ -1,3 +1,5 @@
 biopython>=1.79
 numpy>=1.21.0
+rdkit>=2023.3.1
 openbabel-wheel>=3.1.1
+meeko>=0.5.0
