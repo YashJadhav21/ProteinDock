@@ -2,9 +2,7 @@
 set -e
 
 echo "📦 Installing Python dependencies..."
-python3 -m ensurepip --upgrade || true
-python3 -m pip install --upgrade pip
-python3 -m pip install --no-cache-dir -r backend/requirements.txt
+python3 -m pip install --break-system-packages --no-cache-dir biopython numpy rdkit-pypi meeko openbabel-wheel
 
 echo "🔧 Setting up AutoDock Vina..."
 cd backend/vina_bin
