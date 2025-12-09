@@ -4,6 +4,18 @@ set -e
 echo "📦 Installing Python dependencies..."
 pip install -r backend/requirements.txt
 
+echo "🐍 Installing Python 2.7 for MGLTools..."
+# Render uses Ubuntu - install python2.7
+sudo apt-get update -qq
+sudo apt-get install -y python2.7 python2.7-dev
+
+# Verify Python 2.7 is installed
+if command -v python2.7 &> /dev/null; then
+    echo "✅ Python 2.7 installed: $(python2.7 --version)"
+else
+    echo "⚠️  Python 2.7 installation failed, will use BioPython fallback"
+fi
+
 echo "✅ MGLTools scripts bundled in repository (backend/mgltools/)"
 
 echo "🔧 Setting up AutoDock Vina..."
