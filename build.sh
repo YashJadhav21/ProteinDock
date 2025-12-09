@@ -2,6 +2,8 @@
 set -e
 
 echo "📦 Installing Python dependencies..."
+python3 -m ensurepip --upgrade || true
+python3 -m pip install --upgrade pip
 python3 -m pip install --no-cache-dir -r backend/requirements.txt
 
 echo "🔧 Setting up AutoDock Vina..."
