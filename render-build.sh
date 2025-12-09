@@ -4,31 +4,7 @@ set -e
 echo "📦 Installing Python dependencies..."
 pip install -r backend/requirements.txt
 
-echo "🧬 Setting up MGLTools (AutoDockTools)..."
-cd backend
-
-# Download MGLTools if not present
-if [ ! -d "mgltools/MGLToolsPckgs" ]; then
-    echo "Downloading MGLTools..."
-    wget -q http://mgltools.scripps.edu/downloads/downloads/tars/releases/REL1.5.7/mgltools_x86_64Linux2_1.5.7.tar.gz -O mgltools.tar.gz
-    
-    echo "Extracting MGLTools..."
-    tar -xzf mgltools.tar.gz
-    
-    echo "Setting up MGLTools directories..."
-    mkdir -p mgltools
-    mv mgltools_x86_64Linux2_1.5.7/MGLToolsPckgs mgltools/
-    
-    echo "Cleaning up..."
-    rm -rf mgltools_x86_64Linux2_1.5.7
-    rm mgltools.tar.gz
-    
-    echo "✅ MGLTools setup complete!"
-else
-    echo "✅ MGLTools already installed"
-fi
-
-cd ..
+echo "✅ MGLTools scripts bundled in repository (backend/mgltools/)"
 
 echo "🔧 Setting up AutoDock Vina..."
 cd backend/vina_bin

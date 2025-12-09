@@ -46,11 +46,6 @@ backend/docking_jobs/*/
 !backend/docking_jobs/.gitkeep
 backend/quick_test_output/
 
-# MGLTools (downloaded during build)
-backend/mgltools/
-backend/mgltools_temp/
-backend/*.tar.gz
-
 # Logs
 npm-debug.log*
 yarn-debug.log*

@@ -142,6 +142,8 @@ def pdb_to_pdbqt(pdb_content, output_file):
     
     This is the GOLD STANDARD receptor preparation tool from AutoDockTools.
     Creates proper PDBQT files with correct atom types, hydrogens, and Gasteiger charges.
+    
+    Uses bundled MGLTools scripts included in the repository.
     """
     try:
         import subprocess
@@ -165,14 +167,14 @@ def pdb_to_pdbqt(pdb_content, output_file):
             prepare_receptor = os.path.join(mgltools_path, "prepare_receptor4.py")
             mgltools_python = r"C:\Program Files (x86)\MGLTools-1.5.7\python.exe"
         else:
-            # Linux/Render: Use bundled MGLTools scripts in repo
-            mgltools_path = script_dir / "mgltools" / "MGLToolsPckgs" / "AutoDockTools" / "Utilities24"
+            # Linux/Render: Use bundled MGLTools scripts from repo
+            mgltools_path = script_dir / "mgltools" / "AutoDockTools" / "Utilities24"
             prepare_receptor = mgltools_path / "prepare_receptor4.py"
-            # On Linux, use system python (MGLTools scripts are Python 2/3 compatible now)
+            # On Linux, use system python with PYTHONPATH set to find modules
             mgltools_python = sys.executable
         
         print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
-        print(f"[Receptor Prep] MGLTools path: {mgltools_path}", file=sys.stderr)
+        print(f"[Receptor Prep] Script path: {prepare_receptor}", file=sys.stderr)
         
         if not os.path.exists(prepare_receptor):
             raise Exception(f"prepare_receptor4.py not found at: {prepare_receptor}")
@@ -189,8 +191,8 @@ def pdb_to_pdbqt(pdb_content, output_file):
         # -A: automatically add hydrogens and merge non-polar hydrogens
         # -U: cleanup (remove lone pairs, add hydrogens, etc.)
         cmd = [
-            mgltools_python,
-            prepare_receptor,
+            str(mgltools_python),
+            str(prepare_receptor),
             '-r', temp_pdb,      # Receptor PDB input
             '-o', output_file,   # PDBQT output
             '-A', 'hydrogens',   # Add all hydrogens
@@ -199,12 +201,20 @@ def pdb_to_pdbqt(pdb_content, output_file):
         
         print(f"[Receptor Prep] Running: {' '.join(cmd)}", file=sys.stderr)
         
+        # Set PYTHONPATH for Linux to find bundled MGLTools modules
+        env = os.environ.copy()
+        if system != 'Windows':
+            mgltools_base = script_dir / "mgltools"
+            env['PYTHONPATH'] = str(mgltools_base) + os.pathsep + env.get('PYTHONPATH', '')
+            print(f"[Receptor Prep] PYTHONPATH: {env['PYTHONPATH']}", file=sys.stderr)
+        
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=120,
-            cwd=os.path.dirname(output_file)  # Run in output directory
+            cwd=os.path.dirname(output_file),
+            env=env  # Pass environment with PYTHONPATH
         )
         
         if result.returncode != 0:
