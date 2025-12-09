@@ -138,17 +138,18 @@ def smiles_to_pdbqt(smiles, output_file):
 
 def pdb_to_pdbqt_biopython(pdb_content, output_file):
     """
-    Fallback: Convert PDB to PDBQT using BioPython + OpenBabel
+    Fallback: Convert PDB to PDBQT using Meeko
     
     Used when MGLTools Python 2 is not available.
-    This is less accurate than MGLTools but works on modern Python 3.
+    Meeko is the modern replacement for MGLTools receptor preparation.
     """
     try:
         from Bio.PDB import PDBParser, PDBIO
         from io import StringIO
-        import subprocess
+        from meeko import PDBQTWriterLegacy, MoleculePreparation
+        from rdkit import Chem
         
-        print(f"[Receptor Prep BioPython] Converting PDB to PDBQT using BioPython + OpenBabel", file=sys.stderr)
+        print(f"[Receptor Prep Meeko] Converting PDB to PDBQT using Meeko", file=sys.stderr)
         
         # Parse PDB
         parser = PDBParser(QUIET=True)
@@ -160,33 +161,25 @@ def pdb_to_pdbqt_biopython(pdb_content, output_file):
         io.set_structure(structure)
         io.save(temp_pdb)
         
-        # Convert PDB to PDBQT using OpenBabel
-        # Add hydrogens and assign Gasteiger charges
-        cmd = [
-            'obabel',
-            temp_pdb,
-            '-O', output_file,
-            '-xh',  # Add hydrogens
-            '-p', '7.4'  # pH 7.4
-        ]
+        # Read with RDKit and prepare with Meeko
+        mol = Chem.MolFromPDBFile(temp_pdb, removeHs=False, sanitize=False)
+        if mol is None:
+            raise Exception("Failed to parse PDB with RDKit")
         
-        print(f"[Receptor Prep BioPython] Running: {' '.join(cmd)}", file=sys.stderr)
+        # Add hydrogens
+        mol = Chem.AddHs(mol, addCoords=True)
         
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
+        # Prepare for docking with Meeko
+        preparator = MoleculePreparation()
+        mol_setups = preparator.prepare(mol)
         
-        if result.returncode != 0:
-            raise Exception(f"OpenBabel conversion failed: {result.stderr}")
+        # Write PDBQT
+        writer = PDBQTWriterLegacy()
+        pdbqt_string = writer.write_string(mol_setups[0])[0]
+        with open(output_file, 'w') as f:
+            f.write(pdbqt_string)
         
-        # Verify output
-        if not os.path.exists(output_file) or os.path.getsize(output_file) < 100:
-            raise Exception(f"Output PDBQT file invalid or too small")
-        
-        print(f"[Receptor Prep BioPython] ✅ PDBQT created with BioPython + OpenBabel", file=sys.stderr)
+        print(f"[Receptor Prep Meeko] ✅ PDBQT created with Meeko", file=sys.stderr)
         
         # Cleanup
         if os.path.exists(temp_pdb):
@@ -195,8 +188,8 @@ def pdb_to_pdbqt_biopython(pdb_content, output_file):
         return True
         
     except Exception as e:
-        print(f"[Receptor Prep BioPython Error] {str(e)}", file=sys.stderr)
-        raise Exception(f"BioPython PDB to PDBQT conversion failed: {str(e)}")
+        print(f"[Receptor Prep Meeko Error] {str(e)}", file=sys.stderr)
+        raise Exception(f"Meeko PDB to PDBQT conversion failed: {str(e)}")
 
 def pdb_to_pdbqt(pdb_content, output_file):
     """
@@ -245,15 +238,15 @@ def pdb_to_pdbqt(pdb_content, output_file):
                     continue
             
             if not mgltools_python:
-                # No Python 2 available - will use fallback BioPython conversion
-                print(f"[Receptor Prep] Python 2 not available, using BioPython fallback", file=sys.stderr)
+                # No Python 2 available - will use fallback Meeko conversion
+                print(f"[Receptor Prep] Python 2 not available, using Meeko fallback", file=sys.stderr)
         
         print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
         print(f"[Receptor Prep] Script path: {prepare_receptor}", file=sys.stderr)
         
-        # If Python 2 not available on Linux, use BioPython fallback
+        # If Python 2 not available on Linux, use Meeko fallback
         if system != 'Windows' and not mgltools_python:
-            print(f"[Receptor Prep] Using BioPython fallback (no Python 2)", file=sys.stderr)
+            print(f"[Receptor Prep] Using Meeko fallback (no Python 2)", file=sys.stderr)
             return pdb_to_pdbqt_biopython(pdb_content, output_file)
         
         if not os.path.exists(prepare_receptor):
