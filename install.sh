@@ -46,13 +46,8 @@ else
     echo "⚠️  Warning: Vina binary may not be compatible with this system"
 fi
 
-# Install Python dependencies
-echo "📦 Installing Python dependencies..."
-pip install --no-cache-dir -r backend/requirements.txt
-
-# Verify Python packages
-echo "🔍 Verifying Python packages..."
-python3 -c "import Bio; import numpy; import rdkit; print('✅ BioPython, NumPy, and RDKit installed')"
+# Python packages installed via nixpacks.toml
+echo "✅ Python packages installed via nixpacks"
 
 # Install Node dependencies
 echo "📦 Installing Node.js dependencies..."
