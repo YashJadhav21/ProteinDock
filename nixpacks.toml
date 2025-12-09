@@ -10,17 +10,16 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
-  "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/nix/store/*-gcc-*/lib",
   "python3 -m venv /opt/venv",
-  "/opt/venv/bin/pip install --no-cache-dir biopython numpy meeko openbabel-wheel",
-  "/opt/venv/bin/pip install --no-cache-dir --index-url https://pypi.anaconda.org/conda-forge/simple rdkit || /opt/venv/bin/pip install --no-cache-dir rdkit-pypi",
-  "/opt/venv/bin/python -c 'import Bio; import numpy; import meeko; print(\"✅ Core packages installed\")'",
+  "LD_LIBRARY_PATH=/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH /opt/venv/bin/pip install --no-cache-dir biopython numpy meeko openbabel-wheel",
+  "LD_LIBRARY_PATH=/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH /opt/venv/bin/pip install --no-cache-dir --index-url https://pypi.anaconda.org/conda-forge/simple rdkit || LD_LIBRARY_PATH=/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH /opt/venv/bin/pip install --no-cache-dir rdkit-pypi",
+  "LD_LIBRARY_PATH=/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH /opt/venv/bin/python -c 'import Bio; import numpy; import meeko; print(\"✅ Core packages installed\")'",
   "chmod +x install.sh",
-  "bash install.sh"
+  "LD_LIBRARY_PATH=/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH bash install.sh"
 ]
 
 [phases.build]
 cmds = ["echo 'Build complete'"]
 
 [start]
-cmd = "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/nix/store/*-gcc-*/lib && export PATH=/opt/venv/bin:$PATH && cd backend && node server.js"
+cmd = "export LD_LIBRARY_PATH=/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH && export PATH=/opt/venv/bin:$PATH && cd backend && node server.js"
