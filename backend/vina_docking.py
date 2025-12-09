@@ -146,6 +146,7 @@ def pdb_to_pdbqt(pdb_content, output_file):
     try:
         import subprocess
         import tempfile
+        import platform
         
         print(f"[Receptor Prep] Using AutoDockTools prepare_receptor4.py", file=sys.stderr)
         
@@ -154,18 +155,30 @@ def pdb_to_pdbqt(pdb_content, output_file):
         with open(temp_pdb, 'w') as f:
             f.write(pdb_content)
         
-        # Path to MGLTools prepare_receptor4.py
-        mgltools_path = r"C:\Program Files (x86)\MGLTools-1.5.7\Lib\site-packages\AutoDockTools\Utilities24"
-        prepare_receptor = os.path.join(mgltools_path, "prepare_receptor4.py")
+        # Detect platform and set MGLTools paths accordingly
+        script_dir = Path(__file__).parent
+        system = platform.system()
+        
+        if system == 'Windows':
+            # Windows: Use installed MGLTools
+            mgltools_path = r"C:\Program Files (x86)\MGLTools-1.5.7\Lib\site-packages\AutoDockTools\Utilities24"
+            prepare_receptor = os.path.join(mgltools_path, "prepare_receptor4.py")
+            mgltools_python = r"C:\Program Files (x86)\MGLTools-1.5.7\python.exe"
+        else:
+            # Linux/Render: Use bundled MGLTools scripts in repo
+            mgltools_path = script_dir / "mgltools" / "MGLToolsPckgs" / "AutoDockTools" / "Utilities24"
+            prepare_receptor = mgltools_path / "prepare_receptor4.py"
+            # On Linux, use system python (MGLTools scripts are Python 2/3 compatible now)
+            mgltools_python = sys.executable
+        
+        print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
+        print(f"[Receptor Prep] MGLTools path: {mgltools_path}", file=sys.stderr)
         
         if not os.path.exists(prepare_receptor):
             raise Exception(f"prepare_receptor4.py not found at: {prepare_receptor}")
         
-        # Find MGLTools Python executable (Python 2.x for MGLTools)
-        mgltools_python = r"C:\Program Files (x86)\MGLTools-1.5.7\python.exe"
-        
         if not os.path.exists(mgltools_python):
-            raise Exception(f"MGLTools python.exe not found at: {mgltools_python}")
+            raise Exception(f"Python executable not found at: {mgltools_python}")
         
         print(f"[Receptor Prep] Using Python: {mgltools_python}", file=sys.stderr)
         print(f"[Receptor Prep] Using script: {prepare_receptor}", file=sys.stderr)
