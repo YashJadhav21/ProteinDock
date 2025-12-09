@@ -3,4 +3,5 @@ numpy>=1.21.0
 scipy>=1.7.0
 rdkit>=2023.3.1
 openbabel-wheel>=3.1.1
+gemmi>=0.6.0
 meeko>=0.5.0
