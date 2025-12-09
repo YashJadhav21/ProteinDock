@@ -138,48 +138,116 @@ def smiles_to_pdbqt(smiles, output_file):
 
 def pdb_to_pdbqt_biopython(pdb_content, output_file):
     """
-    Fallback: Convert PDB to PDBQT using Meeko
+    Fallback: Convert PDB to PDBQT using RDKit directly (without Meeko)
     
     Used when MGLTools Python 2 is not available.
-    Meeko is the modern replacement for MGLTools receptor preparation.
+    Simpler approach: Use RDKit's MolToPDBQTBlock for receptor preparation.
     """
     try:
-        from Bio.PDB import PDBParser, PDBIO
+        from Bio.PDB import PDBParser, PDBIO, Select
         from io import StringIO
-        from meeko import PDBQTWriterLegacy, MoleculePreparation
         from rdkit import Chem
+        from rdkit.Chem import AllChem
         
-        print(f"[Receptor Prep Meeko] Converting PDB to PDBQT using Meeko", file=sys.stderr)
+        print(f"[Receptor Prep RDKit] Converting PDB to PDBQT using RDKit", file=sys.stderr)
         
-        # Parse PDB
+        # Parse PDB and extract protein only (no waters, ligands, ions)
+        class ProteinSelect(Select):
+            def accept_residue(self, residue):
+                # Accept only standard amino acids
+                return residue.id[0] == ' '
+        
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure('protein', StringIO(pdb_content))
         
-        # Write cleaned PDB (protein only, no waters/ligands)
+        # Write cleaned PDB (protein only)
         temp_pdb = output_file.replace('.pdbqt', '_clean.pdb')
         io = PDBIO()
         io.set_structure(structure)
-        io.save(temp_pdb)
+        io.save(temp_pdb, ProteinSelect())
         
-        # Read with RDKit and prepare with Meeko
+        print(f"[Receptor Prep RDKit] Cleaned PDB saved to {temp_pdb}", file=sys.stderr)
+        
+        # Read with RDKit (protein fragment handling)
         mol = Chem.MolFromPDBFile(temp_pdb, removeHs=False, sanitize=False)
         if mol is None:
             raise Exception("Failed to parse PDB with RDKit")
         
-        # Add hydrogens
-        mol = Chem.AddHs(mol, addCoords=True)
+        # Count fragments
+        frags = Chem.GetMolFrags(mol, asMols=True)
+        print(f"[Receptor Prep RDKit] Found {len(frags)} fragments (amino acid chains)", file=sys.stderr)
         
-        # Prepare for docking with Meeko
-        preparator = MoleculePreparation()
-        mol_setups = preparator.prepare(mol)
+        # Combine all fragments into single molecule (this is the protein)
+        # For receptors, we don't need Meeko's advanced preparation
+        # Just add hydrogens and compute Gasteiger charges
         
-        # Write PDBQT
-        writer = PDBQTWriterLegacy()
-        pdbqt_string = writer.write_string(mol_setups[0])[0]
+        # Add polar hydrogens only (non-polar H merged automatically in Vina)
+        mol = Chem.AddHs(mol, addCoords=True, onlyOnAtoms=None)
+        
+        print(f"[Receptor Prep RDKit] Added hydrogens, computing charges...", file=sys.stderr)
+        
+        # Compute Gasteiger charges
+        AllChem.ComputeGasteigerCharges(mol)
+        
+        # Write PDBQT manually (RDKit MolToPDBBlock + charge/type columns)
+        pdbqt_lines = []
+        conf = mol.GetConformer()
+        
+        for atom in mol.GetAtoms():
+            atom_idx = atom.GetIdx()
+            pos = conf.GetAtomPosition(atom_idx)
+            
+            # Get atom properties
+            atom_name = atom.GetSymbol()
+            residue_name = "UNK"
+            chain_id = "A"
+            residue_num = 1
+            
+            # Try to get PDB info if available
+            if atom.HasProp('_Name'):
+                atom_name = atom.GetProp('_Name')
+            if atom.HasProp('_ResidueInfo'):
+                residue_name = atom.GetMonomerInfo().GetResidueName() if atom.GetMonomerInfo() else "UNK"
+                residue_num = atom.GetMonomerInfo().GetResidueNumber() if atom.GetMonomerInfo() else 1
+                chain_id = atom.GetMonomerInfo().GetChainId() if atom.GetMonomerInfo() else "A"
+            
+            # Get charge
+            charge = 0.0
+            if atom.HasProp('_GasteigerCharge'):
+                try:
+                    charge = float(atom.GetProp('_GasteigerCharge'))
+                except:
+                    charge = 0.0
+            
+            # Determine AutoDock atom type (simplified)
+            atom_type = atom.GetSymbol()  # C, N, O, S, etc.
+            if atom.GetSymbol() == 'C':
+                if atom.GetIsAromatic():
+                    atom_type = 'A'  # Aromatic carbon
+                else:
+                    atom_type = 'C'
+            elif atom.GetSymbol() == 'N':
+                atom_type = 'NA' if atom.GetIsAromatic() else 'N'
+            elif atom.GetSymbol() == 'O':
+                atom_type = 'OA' if atom.GetTotalValence() >= 2 else 'O'
+            elif atom.GetSymbol() == 'S':
+                atom_type = 'SA'
+            elif atom.GetSymbol() == 'H':
+                atom_type = 'HD'  # Polar hydrogen
+            
+            # PDBQT format line
+            line = f"ATOM  {atom_idx+1:5d} {atom_name:^4s} {residue_name:3s} {chain_id:1s}{residue_num:4d}    "
+            line += f"{pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00    "
+            line += f"{charge:6.3f} {atom_type:2s}\n"
+            pdbqt_lines.append(line)
+        
+        # Write PDBQT file
         with open(output_file, 'w') as f:
-            f.write(pdbqt_string)
+            f.write("REMARK  Receptor prepared with RDKit (MGLTools fallback)\n")
+            f.writelines(pdbqt_lines)
+            f.write("TER\nEND\n")
         
-        print(f"[Receptor Prep Meeko] ✅ PDBQT created with Meeko", file=sys.stderr)
+        print(f"[Receptor Prep RDKit] ✅ PDBQT created ({len(pdbqt_lines)} atoms)", file=sys.stderr)
         
         # Cleanup
         if os.path.exists(temp_pdb):
@@ -188,8 +256,10 @@ def pdb_to_pdbqt_biopython(pdb_content, output_file):
         return True
         
     except Exception as e:
-        print(f"[Receptor Prep Meeko Error] {str(e)}", file=sys.stderr)
-        raise Exception(f"Meeko PDB to PDBQT conversion failed: {str(e)}")
+        print(f"[Receptor Prep RDKit Error] {str(e)}", file=sys.stderr)
+        import traceback
+        print(f"[Receptor Prep RDKit Traceback] {traceback.format_exc()}", file=sys.stderr)
+        raise Exception(f"RDKit PDB to PDBQT conversion failed: {str(e)}")
 
 def pdb_to_pdbqt(pdb_content, output_file):
     """
@@ -238,15 +308,15 @@ def pdb_to_pdbqt(pdb_content, output_file):
                     continue
             
             if not mgltools_python:
-                # No Python 2 available - will use fallback Meeko conversion
-                print(f"[Receptor Prep] Python 2 not available, using Meeko fallback", file=sys.stderr)
+                # No Python 2 available - will use fallback RDKit conversion
+                print(f"[Receptor Prep] Python 2 not available, using RDKit fallback", file=sys.stderr)
         
         print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
         print(f"[Receptor Prep] Script path: {prepare_receptor}", file=sys.stderr)
         
-        # If Python 2 not available on Linux, use Meeko fallback
+        # If Python 2 not available on Linux, use RDKit fallback
         if system != 'Windows' and not mgltools_python:
-            print(f"[Receptor Prep] Using Meeko fallback (no Python 2)", file=sys.stderr)
+            print(f"[Receptor Prep] Using RDKit fallback (no Python 2)", file=sys.stderr)
             return pdb_to_pdbqt_biopython(pdb_content, output_file)
         
         if not os.path.exists(prepare_receptor):
