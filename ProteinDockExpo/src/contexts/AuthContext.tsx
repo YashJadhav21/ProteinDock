@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password: string) => {
     try {
       console.log('🔑 Attempting login for:', email);
-      const response = await fetch('http://192.168.0.102:3000/api/auth/login', {
+      const response = await fetch('https://proteindock-production.up.railway.app/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -77,7 +77,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const register = async (name: string, email: string, password: string, institution?: string) => {
     try {
       console.log('📝 Attempting registration for:', email);
-      const url = 'http://192.168.0.102:3000/api/auth/register';
+      const url = 'https://proteindock-production.up.railway.app/api/auth/register';
       const body = { name, email, password, institution };
       console.log('🌐 Request URL:', url);
       console.log('📤 Request body:', { ...body, password: '***' });

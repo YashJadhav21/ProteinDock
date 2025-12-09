@@ -123,7 +123,7 @@ const ResultsScreen = ({ route, navigation }: any) => {
                     icon="cube-outline"
                     style={styles.viewerButton}
                     onPress={() => {
-                      const viewerUrl = `http://192.168.0.102:3000${job.results.viewer.urlPath}`;
+                      const viewerUrl = `https://proteindock-production.up.railway.app${job.results.viewer.urlPath}`;
                       navigation.navigate('Viewer', {
                         viewerUrl,
                         expiresAt: job.results.viewer.expiresAt
