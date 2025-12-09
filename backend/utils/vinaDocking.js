@@ -19,7 +19,8 @@ class VinaDocking {
   async checkVinaAvailability() {
     return new Promise((resolve) => {
       const python = spawn('python', [this.pythonScript], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env }
       });
 
       let output = '';
@@ -72,7 +73,8 @@ class VinaDocking {
       console.log('[Vina] Starting docking job:', jobId);
       
       const python = spawn('python', [this.pythonScript], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env }
       });
 
       let outputBuffer = '';
