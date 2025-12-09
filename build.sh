@@ -2,7 +2,7 @@
 set -e
 
 echo "📦 Installing Python dependencies..."
-pip install --no-cache-dir -r backend/requirements.txt
+python3 -m pip install --no-cache-dir -r backend/requirements.txt
 
 echo "🔧 Setting up AutoDock Vina..."
 cd backend/vina_bin
