@@ -136,6 +136,68 @@ def smiles_to_pdbqt(smiles, output_file):
     except Exception as e:
         raise Exception(f"SMILES to PDBQT conversion failed: {str(e)}")
 
+def pdb_to_pdbqt_biopython(pdb_content, output_file):
+    """
+    Fallback: Convert PDB to PDBQT using BioPython + OpenBabel
+    
+    Used when MGLTools Python 2 is not available.
+    This is less accurate than MGLTools but works on modern Python 3.
+    """
+    try:
+        from Bio.PDB import PDBParser, PDBIO
+        from io import StringIO
+        import subprocess
+        
+        print(f"[Receptor Prep BioPython] Converting PDB to PDBQT using BioPython + OpenBabel", file=sys.stderr)
+        
+        # Parse PDB
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure('protein', StringIO(pdb_content))
+        
+        # Write cleaned PDB (protein only, no waters/ligands)
+        temp_pdb = output_file.replace('.pdbqt', '_clean.pdb')
+        io = PDBIO()
+        io.set_structure(structure)
+        io.save(temp_pdb)
+        
+        # Convert PDB to PDBQT using OpenBabel
+        # Add hydrogens and assign Gasteiger charges
+        cmd = [
+            'obabel',
+            temp_pdb,
+            '-O', output_file,
+            '-xh',  # Add hydrogens
+            '-p', '7.4'  # pH 7.4
+        ]
+        
+        print(f"[Receptor Prep BioPython] Running: {' '.join(cmd)}", file=sys.stderr)
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if result.returncode != 0:
+            raise Exception(f"OpenBabel conversion failed: {result.stderr}")
+        
+        # Verify output
+        if not os.path.exists(output_file) or os.path.getsize(output_file) < 100:
+            raise Exception(f"Output PDBQT file invalid or too small")
+        
+        print(f"[Receptor Prep BioPython] ✅ PDBQT created with BioPython + OpenBabel", file=sys.stderr)
+        
+        # Cleanup
+        if os.path.exists(temp_pdb):
+            os.remove(temp_pdb)
+        
+        return True
+        
+    except Exception as e:
+        print(f"[Receptor Prep BioPython Error] {str(e)}", file=sys.stderr)
+        raise Exception(f"BioPython PDB to PDBQT conversion failed: {str(e)}")
+
 def pdb_to_pdbqt(pdb_content, output_file):
     """
     Convert PDB to PDBQT using MGLTools AutoDockTools prepare_receptor4.py
@@ -170,16 +232,35 @@ def pdb_to_pdbqt(pdb_content, output_file):
             # Linux/Render: Use bundled MGLTools scripts from repo
             mgltools_path = script_dir / "mgltools" / "AutoDockTools" / "Utilities24"
             prepare_receptor = mgltools_path / "prepare_receptor4.py"
-            # On Linux, use system python with PYTHONPATH set to find modules
-            mgltools_python = sys.executable
+            # MGLTools scripts are Python 2 - try python2.7, python2, or fallback to conversion
+            mgltools_python = None
+            for py2_cmd in ['python2.7', 'python2', '/usr/bin/python2.7', '/usr/bin/python2']:
+                try:
+                    result = subprocess.run([py2_cmd, '--version'], capture_output=True, timeout=2)
+                    if result.returncode == 0:
+                        mgltools_python = py2_cmd
+                        print(f"[Receptor Prep] Found Python 2: {py2_cmd}", file=sys.stderr)
+                        break
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    continue
+            
+            if not mgltools_python:
+                # No Python 2 available - will use fallback BioPython conversion
+                print(f"[Receptor Prep] Python 2 not available, using BioPython fallback", file=sys.stderr)
         
         print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
         print(f"[Receptor Prep] Script path: {prepare_receptor}", file=sys.stderr)
         
+        # If Python 2 not available on Linux, use BioPython fallback
+        if system != 'Windows' and not mgltools_python:
+            print(f"[Receptor Prep] Using BioPython fallback (no Python 2)", file=sys.stderr)
+            return pdb_to_pdbqt_biopython(pdb_content, output_file)
+        
         if not os.path.exists(prepare_receptor):
             raise Exception(f"prepare_receptor4.py not found at: {prepare_receptor}")
         
-        if not os.path.exists(mgltools_python):
+        # On Windows, check if MGLTools python exists
+        if system == 'Windows' and not os.path.exists(mgltools_python):
             raise Exception(f"Python executable not found at: {mgltools_python}")
         
         print(f"[Receptor Prep] Using Python: {mgltools_python}", file=sys.stderr)
