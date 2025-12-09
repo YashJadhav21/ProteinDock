@@ -6,6 +6,9 @@ import json
 import os
 from pathlib import Path
 
+# Debug: Print LD_LIBRARY_PATH
+print(f"[Debug] LD_LIBRARY_PATH = {os.environ.get('LD_LIBRARY_PATH', 'NOT SET')}", file=sys.stderr)
+
 def setup_vina_environment():
     """
     Check if Vina is available (binary or Python package)
