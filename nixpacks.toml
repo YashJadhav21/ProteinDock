@@ -1,26 +1,5 @@
 [phases.setup]
-nixPkgs = [
-  "python311",
-  "python311Packages.pip",
-  "python311Packages.virtualenv",
-  "nodejs_20",
-  "curl",
-  "stdenv.cc.cc.lib"
-]
-
-[phases.install]
-cmds = [
-  "chmod +x setup_env.sh",
-  "python3 -m venv /opt/venv",
-  "./setup_env.sh /opt/venv/bin/pip install --no-cache-dir biopython numpy meeko openbabel-wheel",
-  "./setup_env.sh /opt/venv/bin/pip install --no-cache-dir --index-url https://pypi.anaconda.org/conda-forge/simple rdkit || ./setup_env.sh /opt/venv/bin/pip install --no-cache-dir rdkit-pypi",
-  "./setup_env.sh /opt/venv/bin/python -c 'import Bio; import numpy; import meeko; print(\"✅ Core packages installed\")'",
-  "chmod +x install.sh",
-  "./setup_env.sh bash install.sh"
-]
-
-[phases.build]
-cmds = ["echo 'Build complete'"]
+nixPkgs = ["python311", "nodejs_20"]
 
 [start]
-cmd = "bash setup_env.sh node backend/server.js"
+cmd = "cd backend && node server.js"
