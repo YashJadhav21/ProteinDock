@@ -138,18 +138,17 @@ def smiles_to_pdbqt(smiles, output_file):
 
 def pdb_to_pdbqt_biopython(pdb_content, output_file):
     """
-    Fallback: Convert PDB to PDBQT using RDKit directly (without Meeko)
+    Fallback: Convert PDB to PDBQT using BioPython only (no RDKit)
     
-    Used when MGLTools Python 2 is not available.
-    Simpler approach: Use RDKit's MolToPDBQTBlock for receptor preparation.
+    Memory-efficient approach: Parse PDB line-by-line, skip heavy RDKit processing.
+    Uses simple atom type assignment based on element and residue context.
     """
     try:
         from Bio.PDB import PDBParser, PDBIO, Select
         from io import StringIO
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
+        import gc
         
-        print(f"[Receptor Prep RDKit] Converting PDB to PDBQT using RDKit", file=sys.stderr)
+        print(f"[Receptor Prep BioPython] Converting PDB to PDBQT (memory-efficient)", file=sys.stderr)
         
         # Parse PDB and extract protein only (no waters, ligands, ions)
         class ProteinSelect(Select):
@@ -160,106 +159,92 @@ def pdb_to_pdbqt_biopython(pdb_content, output_file):
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure('protein', StringIO(pdb_content))
         
-        # Write cleaned PDB (protein only)
-        temp_pdb = output_file.replace('.pdbqt', '_clean.pdb')
-        io = PDBIO()
-        io.set_structure(structure)
-        io.save(temp_pdb, ProteinSelect())
-        
-        print(f"[Receptor Prep RDKit] Cleaned PDB saved to {temp_pdb}", file=sys.stderr)
-        
-        # Read with RDKit (protein fragment handling)
-        mol = Chem.MolFromPDBFile(temp_pdb, removeHs=False, sanitize=False)
-        if mol is None:
-            raise Exception("Failed to parse PDB with RDKit")
-        
-        # Count fragments
-        frags = Chem.GetMolFrags(mol, asMols=True)
-        print(f"[Receptor Prep RDKit] Found {len(frags)} fragments (amino acid chains)", file=sys.stderr)
-        
-        # Combine all fragments into single molecule (this is the protein)
-        # For receptors, we don't need Meeko's advanced preparation
-        # Just add hydrogens and compute Gasteiger charges
-        
-        # Add polar hydrogens only (non-polar H merged automatically in Vina)
-        mol = Chem.AddHs(mol, addCoords=True, onlyOnAtoms=None)
-        
-        print(f"[Receptor Prep RDKit] Added hydrogens, computing charges...", file=sys.stderr)
-        
-        # Compute Gasteiger charges
-        AllChem.ComputeGasteigerCharges(mol)
-        
-        # Write PDBQT manually (RDKit MolToPDBBlock + charge/type columns)
+        # Write PDBQT directly from BioPython structure (skip RDKit entirely)
         pdbqt_lines = []
-        conf = mol.GetConformer()
+        pdbqt_lines.append("REMARK  Receptor prepared with BioPython (lightweight fallback)\n")
         
-        for atom in mol.GetAtoms():
-            atom_idx = atom.GetIdx()
-            pos = conf.GetAtomPosition(atom_idx)
-            
-            # Get atom properties
-            atom_name = atom.GetSymbol()
-            residue_name = "UNK"
-            chain_id = "A"
-            residue_num = 1
-            
-            # Try to get PDB info if available
-            if atom.HasProp('_Name'):
-                atom_name = atom.GetProp('_Name')
-            if atom.HasProp('_ResidueInfo'):
-                residue_name = atom.GetMonomerInfo().GetResidueName() if atom.GetMonomerInfo() else "UNK"
-                residue_num = atom.GetMonomerInfo().GetResidueNumber() if atom.GetMonomerInfo() else 1
-                chain_id = atom.GetMonomerInfo().GetChainId() if atom.GetMonomerInfo() else "A"
-            
-            # Get charge
-            charge = 0.0
-            if atom.HasProp('_GasteigerCharge'):
-                try:
-                    charge = float(atom.GetProp('_GasteigerCharge'))
-                except:
-                    charge = 0.0
-            
-            # Determine AutoDock atom type (simplified)
-            atom_type = atom.GetSymbol()  # C, N, O, S, etc.
-            if atom.GetSymbol() == 'C':
-                if atom.GetIsAromatic():
-                    atom_type = 'A'  # Aromatic carbon
-                else:
-                    atom_type = 'C'
-            elif atom.GetSymbol() == 'N':
-                atom_type = 'NA' if atom.GetIsAromatic() else 'N'
-            elif atom.GetSymbol() == 'O':
-                atom_type = 'OA' if atom.GetTotalValence() >= 2 else 'O'
-            elif atom.GetSymbol() == 'S':
-                atom_type = 'SA'
-            elif atom.GetSymbol() == 'H':
-                atom_type = 'HD'  # Polar hydrogen
-            
-            # PDBQT format line
-            line = f"ATOM  {atom_idx+1:5d} {atom_name:^4s} {residue_name:3s} {chain_id:1s}{residue_num:4d}    "
-            line += f"{pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00    "
-            line += f"{charge:6.3f} {atom_type:2s}\n"
-            pdbqt_lines.append(line)
+        atom_count = 0
+        for model in structure:
+            for chain in model:
+                for residue in chain:
+                    # Skip non-protein residues (waters, ligands, ions)
+                    if residue.id[0] != ' ':
+                        continue
+                    
+                    residue_name = residue.resname.strip()
+                    residue_num = residue.id[1]
+                    chain_id = chain.id
+                    
+                    for atom in residue:
+                        atom_count += 1
+                        atom_name = atom.name.strip()
+                        element = atom.element.strip()
+                        coord = atom.coord
+                        
+                        # Simple AutoDock atom type assignment (no RDKit needed)
+                        # Based on element and common protein atom patterns
+                        atom_type = element  # Default to element symbol
+                        
+                        if element == 'C':
+                            # Aromatic carbons in PHE, TRP, TYR, HIS rings
+                            if residue_name in ['PHE', 'TRP', 'TYR', 'HIS'] and atom_name in ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ', 'CE3', 'CZ2', 'CZ3', 'CH2']:
+                                atom_type = 'A'  # Aromatic
+                            else:
+                                atom_type = 'C'  # Aliphatic
+                        elif element == 'N':
+                            # Aromatic nitrogens in HIS, TRP
+                            if residue_name in ['HIS', 'TRP'] and atom_name in ['ND1', 'NE2', 'NE1']:
+                                atom_type = 'NA'
+                            else:
+                                atom_type = 'N'
+                        elif element == 'O':
+                            # Acceptor oxygens (carbonyl, hydroxyl, carboxyl)
+                            if atom_name in ['O', 'OD1', 'OD2', 'OE1', 'OE2', 'OG', 'OG1', 'OH']:
+                                atom_type = 'OA'
+                            else:
+                                atom_type = 'O'
+                        elif element == 'S':
+                            atom_type = 'SA'
+                        elif element == 'H':
+                            atom_type = 'HD'  # Polar hydrogen
+                        elif element == 'P':
+                            atom_type = 'P'
+                        elif element in ['FE', 'MG', 'CA', 'ZN', 'MN']:
+                            atom_type = element  # Metals
+                        
+                        # Simple Gasteiger charge approximation (avoid heavy computation)
+                        charge = 0.0
+                        if element == 'N' and atom_name == 'N':
+                            charge = -0.3  # Backbone N
+                        elif element == 'O' and atom_name == 'O':
+                            charge = -0.4  # Backbone O
+                        elif element == 'C' and atom_name == 'C':
+                            charge = 0.5   # Backbone C
+                        
+                        # PDBQT format line
+                        line = f"ATOM  {atom_count:5d} {atom_name:^4s} {residue_name:3s} {chain_id:1s}{residue_num:4d}    "
+                        line += f"{coord[0]:8.3f}{coord[1]:8.3f}{coord[2]:8.3f}  1.00  0.00    "
+                        line += f"{charge:6.3f} {atom_type:2s}\n"
+                        pdbqt_lines.append(line)
         
         # Write PDBQT file
         with open(output_file, 'w') as f:
-            f.write("REMARK  Receptor prepared with RDKit (MGLTools fallback)\n")
             f.writelines(pdbqt_lines)
             f.write("TER\nEND\n")
         
-        print(f"[Receptor Prep RDKit] ✅ PDBQT created ({len(pdbqt_lines)} atoms)", file=sys.stderr)
+        print(f"[Receptor Prep BioPython] ✅ PDBQT created ({atom_count} atoms)", file=sys.stderr)
         
-        # Cleanup
-        if os.path.exists(temp_pdb):
-            os.remove(temp_pdb)
+        # Force garbage collection to free memory
+        del structure, parser
+        gc.collect()
         
         return True
         
     except Exception as e:
-        print(f"[Receptor Prep RDKit Error] {str(e)}", file=sys.stderr)
+        print(f"[Receptor Prep BioPython Error] {str(e)}", file=sys.stderr)
         import traceback
-        print(f"[Receptor Prep RDKit Traceback] {traceback.format_exc()}", file=sys.stderr)
-        raise Exception(f"RDKit PDB to PDBQT conversion failed: {str(e)}")
+        print(f"[Receptor Prep BioPython Traceback] {traceback.format_exc()}", file=sys.stderr)
+        raise Exception(f"BioPython PDB to PDBQT conversion failed: {str(e)}")
 
 def pdb_to_pdbqt(pdb_content, output_file):
     """
@@ -308,15 +293,15 @@ def pdb_to_pdbqt(pdb_content, output_file):
                     continue
             
             if not mgltools_python:
-                # No Python 2 available - will use fallback RDKit conversion
-                print(f"[Receptor Prep] Python 2 not available, using RDKit fallback", file=sys.stderr)
+                # No Python 2 available - will use fallback BioPython conversion
+                print(f"[Receptor Prep] Python 2 not available, using BioPython fallback", file=sys.stderr)
         
         print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
         print(f"[Receptor Prep] Script path: {prepare_receptor}", file=sys.stderr)
         
-        # If Python 2 not available on Linux, use RDKit fallback
+        # If Python 2 not available on Linux, use BioPython fallback
         if system != 'Windows' and not mgltools_python:
-            print(f"[Receptor Prep] Using RDKit fallback (no Python 2)", file=sys.stderr)
+            print(f"[Receptor Prep] Using BioPython fallback (no Python 2)", file=sys.stderr)
             return pdb_to_pdbqt_biopython(pdb_content, output_file)
         
         if not os.path.exists(prepare_receptor):
