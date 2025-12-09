@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "nodejs_20", "curl", "gcc"]
+nixPkgs = ["python311", "python311Packages.pip", "nodejs_20", "curl", "stdenv.cc.cc.lib"]
 
 [start]
 cmd = "bash start.sh"
