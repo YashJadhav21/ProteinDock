@@ -1,5 +1,5 @@
-// For Expo Go: Using your computer's IP address
-const API_URL = 'https://proteindock-production.up.railway.app/api';
+// Render Production URL
+const API_URL = 'https://proteindock.onrender.com/api';
 
 export const api = {
   // Auth

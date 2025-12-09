@@ -123,7 +123,7 @@ const ResultsScreen = ({ route, navigation }: any) => {
                     icon="cube-outline"
                     style={styles.viewerButton}
                     onPress={() => {
-                      const viewerUrl = `https://proteindock-production.up.railway.app${job.results.viewer.urlPath}`;
+                      const viewerUrl = `https://proteindock.onrender.com${job.results.viewer.urlPath}`;
                       navigation.navigate('Viewer', {
                         viewerUrl,
                         expiresAt: job.results.viewer.expiresAt
