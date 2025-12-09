@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+echo "📦 Installing pip..."
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3 - --break-system-packages
+
 echo "📦 Installing Python dependencies..."
 python3 -m pip install --break-system-packages --no-cache-dir biopython numpy rdkit-pypi meeko openbabel-wheel
 
