@@ -1,12 +1,22 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "nodejs_20", "curl"]
+nixPkgs = [
+  "python311",
+  "python311Packages.biopython",
+  "python311Packages.numpy", 
+  "python311Packages.rdkit",
+  "python311Packages.openbabel",
+  "python311Packages.pip",
+  "python311Packages.virtualenv",
+  "nodejs_20",
+  "curl"
+]
 
 [phases.install]
 cmds = [
-  "python3 --version",
-  "pip --version",
-  "pip install --no-cache-dir biopython numpy rdkit meeko openbabel-wheel",
-  "python3 -c 'import Bio; import numpy; import rdkit; print(\"✅ All Python packages installed\")'",
+  "python3 -m venv /opt/venv",
+  "/opt/venv/bin/pip install --no-cache-dir meeko",
+  "python3 -c 'import Bio; import numpy; import rdkit; from openbabel import openbabel; print(\"✅ Nix packages available\")'",
+  "/opt/venv/bin/python -c 'import meeko; print(\"✅ Meeko installed in venv\")'",
   "chmod +x install.sh",
   "bash install.sh"
 ]
@@ -15,4 +25,4 @@ cmds = [
 cmds = ["echo 'Build complete'"]
 
 [start]
-cmd = "cd backend && node server.js"
+cmd = "export PATH=/opt/venv/bin:$PATH && cd backend && node server.js"
