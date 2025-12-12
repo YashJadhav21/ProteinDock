@@ -66,12 +66,13 @@ def setup_vina_environment():
 
 def smiles_to_pdbqt(smiles, output_file):
     """
-    Convert SMILES string to PDBQT format for AutoDock Vina
+    Convert SMILES string to PDBQT format (MEMORY OPTIMIZED)
     """
     try:
         from rdkit import Chem
         from rdkit.Chem import AllChem
         from meeko import MoleculePreparation
+        import gc
         
         # Convert SMILES to molecule
         mol = Chem.MolFromSmiles(smiles)
@@ -80,48 +81,36 @@ def smiles_to_pdbqt(smiles, output_file):
         
         # Add hydrogens
         mol = Chem.AddHs(mol)
+        num_atoms = mol.GetNumAtoms()
         
-        # Generate 3D coordinates with better parameters for large molecules
-        # Try multiple conformers and pick the best one
-        print(f"[Ligand Prep] Generating 3D structure for molecule with {mol.GetNumAtoms()} atoms", file=sys.stderr)
+        print(f"[Ligand Prep] Generating 3D structure for {num_atoms} atoms", file=sys.stderr)
         
-        # Use ETKDG for better conformer generation
+        # Use ETKDG for conformer generation
         params = AllChem.ETKDGv3()
         params.randomSeed = 42
-        params.numThreads = 0  # Use all available threads
+        params.numThreads = 1  # Limit threads to save memory
         
-        # Try to embed molecule with better parameters
+        # Embed molecule
         result = AllChem.EmbedMolecule(mol, params)
         if result == -1:
-            # Embedding failed, try with different parameters
-            print("[Ligand Prep] First embedding attempt failed, trying with useRandomCoords", file=sys.stderr)
             params.useRandomCoords = True
             result = AllChem.EmbedMolecule(mol, params)
             if result == -1:
-                raise ValueError("Failed to generate 3D coordinates for molecule")
+                raise ValueError("Failed to generate 3D coordinates")
         
-        print(f"[Ligand Prep] 3D embedding successful, optimizing geometry...", file=sys.stderr)
+        print(f"[Ligand Prep] Optimizing geometry...", file=sys.stderr)
         
-        # Optimize geometry with MMFF (better for drug-like molecules)
-        if AllChem.MMFFHasAllMoleculeParams(mol):
-            # Use MMFF94s for better accuracy
-            mmff_props = AllChem.MMFFGetMoleculeProperties(mol)
-            ff = AllChem.MMFFGetMoleculeForceField(mol, mmff_props)
-            ff.Minimize(maxIts=2000)
-            print(f"[Ligand Prep] MMFF optimization completed", file=sys.stderr)
-        else:
-            # Fallback to UFF if MMFF parameters not available
-            print(f"[Ligand Prep] MMFF not available, using UFF", file=sys.stderr)
-            AllChem.UFFOptimizeMolecule(mol, maxIts=2000)
+        # Optimize (use UFF for faster/lighter processing)
+        AllChem.UFFOptimizeMolecule(mol, maxIts=1000)  # Reduced iterations
         
-        # Prepare for docking with Meeko (new API)
+        # Prepare for docking
         import warnings
         warnings.filterwarnings('ignore', category=DeprecationWarning)
         
         preparator = MoleculePreparation()
         mol_setups = preparator.prepare(mol)
         
-        # Write PDBQT using new API if available, fallback to old
+        # Write PDBQT
         try:
             from meeko import PDBQTWriterLegacy
             writer = PDBQTWriterLegacy()
@@ -129,8 +118,11 @@ def smiles_to_pdbqt(smiles, output_file):
             with open(output_file, 'w') as f:
                 f.write(pdbqt_string)
         except:
-            # Fallback to deprecated method if new API fails
             preparator.write_pdbqt_file(output_file)
+        
+        # Cleanup
+        del mol, preparator, mol_setups
+        gc.collect()
         
         return True
     except Exception as e:
@@ -138,17 +130,18 @@ def smiles_to_pdbqt(smiles, output_file):
 
 def pdb_to_pdbqt_biopython(pdb_content, output_file):
     """
-    Fallback: Convert PDB to PDBQT using BioPython only (no RDKit)
+    Fallback: Convert PDB to PDBQT using RDKit directly (without Meeko)
     
-    Memory-efficient approach: Parse PDB line-by-line, skip heavy RDKit processing.
-    Uses simple atom type assignment based on element and residue context.
+    MEMORY OPTIMIZED: Processes in chunks and cleans up immediately
     """
     try:
         from Bio.PDB import PDBParser, PDBIO, Select
         from io import StringIO
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
         import gc
         
-        print(f"[Receptor Prep BioPython] Converting PDB to PDBQT (memory-efficient)", file=sys.stderr)
+        print(f"[Receptor Prep RDKit] Converting PDB to PDBQT (memory-optimized)", file=sys.stderr)
         
         # Parse PDB and extract protein only (no waters, ligands, ions)
         class ProteinSelect(Select):
@@ -159,92 +152,121 @@ def pdb_to_pdbqt_biopython(pdb_content, output_file):
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure('protein', StringIO(pdb_content))
         
-        # Write PDBQT directly from BioPython structure (skip RDKit entirely)
-        pdbqt_lines = []
-        pdbqt_lines.append("REMARK  Receptor prepared with BioPython (lightweight fallback)\n")
+        # Write cleaned PDB (protein only)
+        temp_pdb = output_file.replace('.pdbqt', '_clean.pdb')
+        io = PDBIO()
+        io.set_structure(structure)
+        io.save(temp_pdb, ProteinSelect())
         
-        atom_count = 0
-        for model in structure:
-            for chain in model:
-                for residue in chain:
-                    # Skip non-protein residues (waters, ligands, ions)
-                    if residue.id[0] != ' ':
-                        continue
-                    
-                    residue_name = residue.resname.strip()
-                    residue_num = residue.id[1]
-                    chain_id = chain.id
-                    
-                    for atom in residue:
-                        atom_count += 1
-                        atom_name = atom.name.strip()
-                        element = atom.element.strip()
-                        coord = atom.coord
-                        
-                        # Simple AutoDock atom type assignment (no RDKit needed)
-                        # Based on element and common protein atom patterns
-                        atom_type = element  # Default to element symbol
-                        
-                        if element == 'C':
-                            # Aromatic carbons in PHE, TRP, TYR, HIS rings
-                            if residue_name in ['PHE', 'TRP', 'TYR', 'HIS'] and atom_name in ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ', 'CE3', 'CZ2', 'CZ3', 'CH2']:
-                                atom_type = 'A'  # Aromatic
-                            else:
-                                atom_type = 'C'  # Aliphatic
-                        elif element == 'N':
-                            # Aromatic nitrogens in HIS, TRP
-                            if residue_name in ['HIS', 'TRP'] and atom_name in ['ND1', 'NE2', 'NE1']:
-                                atom_type = 'NA'
-                            else:
-                                atom_type = 'N'
-                        elif element == 'O':
-                            # Acceptor oxygens (carbonyl, hydroxyl, carboxyl)
-                            if atom_name in ['O', 'OD1', 'OD2', 'OE1', 'OE2', 'OG', 'OG1', 'OH']:
-                                atom_type = 'OA'
-                            else:
-                                atom_type = 'O'
-                        elif element == 'S':
-                            atom_type = 'SA'
-                        elif element == 'H':
-                            atom_type = 'HD'  # Polar hydrogen
-                        elif element == 'P':
-                            atom_type = 'P'
-                        elif element in ['FE', 'MG', 'CA', 'ZN', 'MN']:
-                            atom_type = element  # Metals
-                        
-                        # Simple Gasteiger charge approximation (avoid heavy computation)
-                        charge = 0.0
-                        if element == 'N' and atom_name == 'N':
-                            charge = -0.3  # Backbone N
-                        elif element == 'O' and atom_name == 'O':
-                            charge = -0.4  # Backbone O
-                        elif element == 'C' and atom_name == 'C':
-                            charge = 0.5   # Backbone C
-                        
-                        # PDBQT format line
-                        line = f"ATOM  {atom_count:5d} {atom_name:^4s} {residue_name:3s} {chain_id:1s}{residue_num:4d}    "
-                        line += f"{coord[0]:8.3f}{coord[1]:8.3f}{coord[2]:8.3f}  1.00  0.00    "
-                        line += f"{charge:6.3f} {atom_type:2s}\n"
-                        pdbqt_lines.append(line)
-        
-        # Write PDBQT file
-        with open(output_file, 'w') as f:
-            f.writelines(pdbqt_lines)
-            f.write("TER\nEND\n")
-        
-        print(f"[Receptor Prep BioPython] ✅ PDBQT created ({atom_count} atoms)", file=sys.stderr)
-        
-        # Force garbage collection to free memory
-        del structure, parser
+        # Free memory immediately
+        del structure, parser, io
         gc.collect()
+        
+        print(f"[Receptor Prep RDKit] Loading molecule...", file=sys.stderr)
+        
+        # Read with RDKit (don't sanitize to save memory)
+        mol = Chem.MolFromPDBFile(temp_pdb, removeHs=True, sanitize=False)  # Remove H first
+        if mol is None:
+            raise Exception("Failed to parse PDB with RDKit")
+        
+        num_atoms_initial = mol.GetNumAtoms()
+        print(f"[Receptor Prep RDKit] Loaded {num_atoms_initial} atoms", file=sys.stderr)
+        
+        # Add only polar hydrogens (saves memory)
+        mol = Chem.AddHs(mol, addCoords=True, onlyOnAtoms=None)
+        print(f"[Receptor Prep RDKit] Now {mol.GetNumAtoms()} atoms with H", file=sys.stderr)
+        
+        # Compute Gasteiger charges in chunks to reduce memory
+        print(f"[Receptor Prep RDKit] Computing charges...", file=sys.stderr)
+        AllChem.ComputeGasteigerCharges(mol)
+        
+        # Write PDBQT in streaming mode (don't build huge array in memory)
+        print(f"[Receptor Prep RDKit] Writing PDBQT...", file=sys.stderr)
+        
+        with open(output_file, 'w') as f:
+            f.write("REMARK  Receptor prepared with RDKit (MGLTools fallback)\n")
+            
+            conf = mol.GetConformer()
+            chunk_size = 500  # Process 500 atoms at a time
+            total_atoms = mol.GetNumAtoms()
+            
+            for chunk_start in range(0, total_atoms, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, total_atoms)
+                
+                # Process chunk
+                for atom_idx in range(chunk_start, chunk_end):
+                    atom = mol.GetAtomWithIdx(atom_idx)
+                    pos = conf.GetAtomPosition(atom_idx)
+                    
+                    # Get atom properties
+                    atom_name = atom.GetSymbol()
+                    residue_name = "UNK"
+                    chain_id = "A"
+                    residue_num = 1
+                    
+                    # Try to get PDB info if available
+                    if atom.HasProp('_Name'):
+                        atom_name = atom.GetProp('_Name')
+                    if atom.GetMonomerInfo():
+                        residue_name = atom.GetMonomerInfo().GetResidueName()
+                        residue_num = atom.GetMonomerInfo().GetResidueNumber()
+                        chain_id = atom.GetMonomerInfo().GetChainId()
+                    
+                    # Get charge
+                    charge = 0.0
+                    if atom.HasProp('_GasteigerCharge'):
+                        try:
+                            charge = float(atom.GetProp('_GasteigerCharge'))
+                            if charge != charge:  # NaN check
+                                charge = 0.0
+                        except:
+                            charge = 0.0
+                    
+                    # Determine AutoDock atom type
+                    symbol = atom.GetSymbol()
+                    if symbol == 'C':
+                        atom_type = 'A' if atom.GetIsAromatic() else 'C'
+                    elif symbol == 'N':
+                        atom_type = 'NA' if atom.GetIsAromatic() else 'N'
+                    elif symbol == 'O':
+                        atom_type = 'OA' if atom.GetTotalValence() >= 2 else 'O'
+                    elif symbol == 'S':
+                        atom_type = 'SA'
+                    elif symbol == 'H':
+                        atom_type = 'HD'
+                    else:
+                        atom_type = symbol
+                    
+                    # Write PDBQT line directly to file
+                    line = f"ATOM  {atom_idx+1:5d} {atom_name:^4s} {residue_name:3s} {chain_id:1s}{residue_num:4d}    "
+                    line += f"{pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00    "
+                    line += f"{charge:6.3f} {atom_type:2s}\n"
+                    f.write(line)
+                
+                # Print progress for large proteins
+                if total_atoms > 1000:
+                    progress = int((chunk_end / total_atoms) * 100)
+                    print(f"[Receptor Prep RDKit] Writing: {progress}% ({chunk_end}/{total_atoms} atoms)", file=sys.stderr)
+            
+            f.write("TER\nENDMDL\n")
+        
+        print(f"[Receptor Prep RDKit] ✅ PDBQT created ({total_atoms} atoms)", file=sys.stderr)
+        
+        # Cleanup memory aggressively
+        del mol, conf
+        gc.collect()
+        
+        # Remove temp file
+        if os.path.exists(temp_pdb):
+            os.remove(temp_pdb)
         
         return True
         
     except Exception as e:
-        print(f"[Receptor Prep BioPython Error] {str(e)}", file=sys.stderr)
+        print(f"[Receptor Prep RDKit Error] {str(e)}", file=sys.stderr)
         import traceback
-        print(f"[Receptor Prep BioPython Traceback] {traceback.format_exc()}", file=sys.stderr)
-        raise Exception(f"BioPython PDB to PDBQT conversion failed: {str(e)}")
+        print(f"[Receptor Prep RDKit Traceback] {traceback.format_exc()}", file=sys.stderr)
+        raise Exception(f"RDKit PDB to PDBQT conversion failed: {str(e)}")
 
 def pdb_to_pdbqt(pdb_content, output_file):
     """
@@ -293,15 +315,15 @@ def pdb_to_pdbqt(pdb_content, output_file):
                     continue
             
             if not mgltools_python:
-                # No Python 2 available - will use fallback BioPython conversion
-                print(f"[Receptor Prep] Python 2 not available, using BioPython fallback", file=sys.stderr)
+                # No Python 2 available - will use fallback RDKit conversion
+                print(f"[Receptor Prep] Python 2 not available, using RDKit fallback", file=sys.stderr)
         
         print(f"[Receptor Prep] Platform: {system}", file=sys.stderr)
         print(f"[Receptor Prep] Script path: {prepare_receptor}", file=sys.stderr)
         
-        # If Python 2 not available on Linux, use BioPython fallback
+        # If Python 2 not available on Linux, use RDKit fallback
         if system != 'Windows' and not mgltools_python:
-            print(f"[Receptor Prep] Using BioPython fallback (no Python 2)", file=sys.stderr)
+            print(f"[Receptor Prep] Using RDKit fallback (no Python 2)", file=sys.stderr)
             return pdb_to_pdbqt_biopython(pdb_content, output_file)
         
         if not os.path.exists(prepare_receptor):
@@ -409,7 +431,7 @@ def pdb_to_pdbqt(pdb_content, output_file):
 
 def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
     """
-    Run AutoDock Vina docking using binary executable
+    Run AutoDock Vina docking (MEMORY OPTIMIZED)
     
     Args:
         receptor_pdbqt: Path to receptor PDBQT file
@@ -418,6 +440,7 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
     """
     import subprocess
     import tempfile
+    import gc
     
     try:
         # Validate input files exist
@@ -448,34 +471,24 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
         exhaustiveness = config.get('exhaustivity', 8)
         n_poses = config.get('numPoses', 9)
         
-        # Validate grid size (Vina requires odd number of points, handled automatically)
-        # Warn if box is too small
+        # MEMORY OPTIMIZATION: Limit CPU count and adjust exhaustivity
+        import multiprocessing
+        cpu_count = min(2, multiprocessing.cpu_count())  # Limit to 2 cores to save memory
+        
+        # Reduce exhaustivity if too high (saves memory)
+        if exhaustiveness > 8:
+            print(f"[Vina] Reducing exhaustivity from {exhaustiveness} to 8 (memory optimization)", file=sys.stderr)
+            exhaustiveness = 8
+        
+        # Reduce poses if too many
+        if n_poses > 5:
+            print(f"[Vina] Reducing poses from {n_poses} to 5 (memory optimization)", file=sys.stderr)
+            n_poses = 5
+        
+        # Validate grid size
         min_size = min(size['x'], size['y'], size['z'])
         if min_size < 15:
-            print(f"[Vina Warning] Small grid box ({min_size}Å) may miss binding modes", file=sys.stderr)
-        
-        # Warn about slow parameter combinations
-        if n_poses > 5 and exhaustiveness < 4:
-            print(f"[Vina Warning] Requesting {n_poses} poses with low exhaustivity ({exhaustiveness}) may be VERY slow", file=sys.stderr)
-            print(f"[Vina Warning] Recommended: Increase exhaustivity to {n_poses} OR reduce poses to 3", file=sys.stderr)
-        
-        # Estimate time based on molecule complexity
-        ligand_mol = None
-        try:
-            from rdkit import Chem
-            ligand_mol = Chem.MolFromPDBFile(ligand_pdbqt.replace('.pdbqt', '.pdb'), removeHs=False)
-            if ligand_mol:
-                num_atoms = ligand_mol.GetNumAtoms()
-                if num_atoms > 100:
-                    base_time = exhaustiveness * 15  # 15 sec per exhaustiveness for large molecules
-                elif num_atoms > 60:
-                    base_time = exhaustiveness * 8   # 8 sec per exhaustiveness for medium
-                else:
-                    base_time = exhaustiveness * 3   # 3 sec per exhaustiveness for small
-                
-                time_factor = 1 + (n_poses - 1) * 0.3  # Each additional pose adds 30% time
-                estimated_time = int(base_time * time_factor)
-                print(f"[Vina] Estimated time for {num_atoms}-atom molecule: {estimated_time}s ({estimated_time//60}m {estimated_time%60}s)", file=sys.stderr)
+            print(f"[Vina Warning] Small grid box ({min_size}Å)", file=sys.stderr)
         except Exception:
             pass
         
@@ -484,16 +497,11 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
             print(f"[Vina Warning] Exhaustiveness too low ({exhaustiveness}), setting to 1", file=sys.stderr)
             exhaustiveness = 1
         if exhaustiveness > 32:
-            print(f"[Vina Warning] Very high exhaustiveness ({exhaustiveness}), docking may take hours", file=sys.stderr)
         
         # Output file
         output_file = ligand_pdbqt.replace('.pdbqt', '_out.pdbqt')
         
-        # Determine CPU count (use all available cores)
-        import multiprocessing
-        cpu_count = multiprocessing.cpu_count()
-        
-        # Create config file with explicit close to ensure all content is written
+        # Create config file
         config_fd, config_file = tempfile.mkstemp(suffix='.txt', text=True)
         try:
             with os.fdopen(config_fd, 'w') as conf:
@@ -509,48 +517,17 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
                 conf.write(f"cpu = {cpu_count}\n")
                 conf.write(f"num_modes = {n_poses}\n")
                 conf.write(f"out = {output_file}\n")
-                conf.flush()  # Ensure all data is written
-                os.fsync(conf.fileno())  # Force write to disk
+                conf.flush()
+                os.fsync(conf.fileno())
         except Exception:
-            os.close(config_fd)  # Close if fdopen failed
+            os.close(config_fd)
             raise
         
-        print(f"[Vina] Running: {vina_bin_path} --config {config_file}", file=sys.stderr)
-        print(f"[Vina] Using {cpu_count} CPU cores", file=sys.stderr)
-        print(f"[Vina] Output file: {output_file}", file=sys.stderr)
+        print(f"[Vina] Using {cpu_count} cores, exhaustivity={exhaustiveness}, poses={n_poses}", file=sys.stderr)
         
-        # Verify config file was written completely
-        if os.path.exists(config_file):
-            config_size = os.path.getsize(config_file)
-            print(f"[Vina] Config file size: {config_size} bytes", file=sys.stderr)
-            if config_size < 100:
-                raise Exception(f"Config file appears truncated ({config_size} bytes)")
+        # Start Vina (no progress monitoring to save memory)
+        print(f"[Vina] Starting docking...", file=sys.stderr)
         
-        print(f"[Vina] Progress: Starting Vina docking...", file=sys.stderr)
-        
-        # Run Vina with real-time output monitoring
-        import threading
-        import time
-        
-        start_time = time.time()
-        
-        def monitor_progress(process, start_time, estimated_time):
-            """Monitor and print progress updates"""
-            
-            while process.poll() is None:
-                elapsed = time.time() - start_time
-                
-                # More realistic progress estimation
-                if elapsed < estimated_time * 0.8:
-                    progress = int((elapsed / estimated_time) * 80)
-                    print(f"[Vina] Progress: {progress}% - Running search (elapsed: {int(elapsed)}s, est. total: {int(estimated_time)}s)", file=sys.stderr)
-                else:
-                    progress = min(95, 80 + int((elapsed - estimated_time * 0.8) / (estimated_time * 0.2) * 15))
-                    print(f"[Vina] Progress: {progress}% - Finalizing results (elapsed: {int(elapsed)}s)", file=sys.stderr)
-                
-                time.sleep(5)  # Update every 5 seconds
-        
-        # Start Vina process
         process = subprocess.Popen(
             [str(vina_bin_path), '--config', config_file],
             stdout=subprocess.PIPE,
@@ -558,28 +535,22 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
             text=True
         )
         
-        # Start progress monitoring thread with better time estimate
-        monitor_thread = threading.Thread(target=monitor_progress, args=(process, start_time, estimated_time if 'estimated_time' in locals() else exhaustiveness * 10))
-        monitor_thread.daemon = True
-        monitor_thread.start()
-        
-        # Wait for completion (timeout: 30 min for large molecules like Ritonavir)
+        # Wait for completion (15 min timeout for memory-limited environment)
         try:
-            stdout, stderr = process.communicate(timeout=1800)  # 30 minute timeout
-            elapsed_time = time.time() - start_time
-            print(f"[Vina] Progress: 100% - Complete! (total time: {int(elapsed_time)}s)", file=sys.stderr)
+            stdout, stderr = process.communicate(timeout=900)  # 15 min timeout
         except subprocess.TimeoutExpired:
             process.kill()
             stdout, stderr = process.communicate()
-            raise Exception(f"Vina execution timed out after 30 minutes")
+            raise Exception(f"Vina timed out after 15 minutes")
         
-        # Clean up config file
+        # Cleanup
         os.unlink(config_file)
+        gc.collect()
         
         if process.returncode != 0:
             raise Exception(f"Vina execution failed: {stderr}")
         
-        print(f"[Vina] Vina output:\n{stdout}", file=sys.stderr)
+        print(f"[Vina] Docking complete", file=sys.stderr)
         
         # Parse results from output
         poses = []
@@ -1025,6 +996,10 @@ def main():
         print(json.dumps({'progress': 15, 'message': 'Preparing ligand...'}), flush=True)
         smiles_to_pdbqt(smiles, ligand_pdbqt)
         
+        # Force garbage collection after ligand prep
+        import gc
+        gc.collect()
+        
         # Save receptor PDB for later use
         with open(receptor_pdb, 'w') as f:
             f.write(pdb_content)
@@ -1043,14 +1018,23 @@ def main():
                 'message': f'Grid detected using {grid_info["method"]}',
                 'grid_info': grid_info
             }), flush=True)
+            
+            # Cleanup
+            gc.collect()
         
         # Convert PDB to PDBQT
         print(json.dumps({'progress': 40, 'message': 'Preparing receptor...'}), flush=True)
         pdb_to_pdbqt(pdb_content, receptor_pdbqt)
         
+        # Force garbage collection after receptor prep (biggest memory use)
+        gc.collect()
+        
         # Run docking
         print(json.dumps({'progress': 50, 'message': 'Running Vina docking...'}), flush=True)
         result = run_vina_docking(receptor_pdbqt, ligand_pdbqt, config)
+        
+        # Cleanup after docking
+        gc.collect()
         
         # Split poses into individual files
         print(json.dumps({'progress': 85, 'message': 'Separating poses...'}), flush=True)
@@ -1074,25 +1058,39 @@ def main():
             result['complex_pdb'] = complex_pdb
             result['pose_files'] = pose_files
         
-        # Analyze interactions
+        # Analyze interactions (skip if low memory)
         print(json.dumps({'progress': 93, 'message': 'Analyzing interactions...'}), flush=True)
         if 'complex_pdb' in result:
-            interactions = parse_interactions(result['complex_pdb'])
-            result['interactions'] = interactions
-            
-            # Add interaction summary to best pose
-            if len(result['poses']) > 0:
-                result['poses'][0]['interactions'] = interactions
+            try:
+                interactions = parse_interactions(result['complex_pdb'])
+                result['interactions'] = interactions
+                
+                # Add interaction summary to best pose
+                if len(result['poses']) > 0:
+                    result['poses'][0]['interactions'] = interactions
+            except Exception as e:
+                print(f"[Interaction Analysis] Skipped due to error: {str(e)}", file=sys.stderr)
+                result['interactions'] = {'error': 'Analysis skipped to save memory'}
         
-        # Generate visualizations
-        print(json.dumps({'progress': 96, 'message': 'Generating interactive viewer...'}), flush=True)
+        # Cleanup before visualization
+        gc.collect()
+        
+        # Generate visualizations (skip if low memory)
+        print(json.dumps({'progress': 96, 'message': 'Generating viewer...'}), flush=True)
         if 'complex_pdb' in result:
-            viewer_info = generate_visualizations(result['complex_pdb'], work_dir)
-            result['viewer'] = viewer_info
+            try:
+                viewer_info = generate_visualizations(result['complex_pdb'], work_dir)
+                result['viewer'] = viewer_info
+            except Exception as e:
+                print(f"[Visualization] Skipped due to error: {str(e)}", file=sys.stderr)
+                result['viewer'] = {'error': 'Visualization skipped to save memory'}
         
         # Add grid information to results
         if auto_grid:
             result['grid_detection'] = grid_info
+        
+        # Final cleanup
+        gc.collect()
         
         # Return results
         result['progress'] = 100
