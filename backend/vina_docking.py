@@ -126,7 +126,7 @@ def smiles_to_pdbqt(smiles, output_file):
         print(f"[Ligand Prep] Optimizing geometry...", file=sys.stderr)
         
         # Optimize (use UFF for faster/lighter processing)
-        AllChem.UFFOptimizeMolecule(mol, maxIts=1000)  # Reduced iterations
+        AllChem.UFFOptimizeMolecule(mol, maxIters=1000)  # Reduced iterations
         
         # Prepare for docking
         import warnings
