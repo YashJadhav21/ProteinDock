@@ -23,16 +23,41 @@ def setup_vina_environment():
     else:
         vina_bin_path = vina_bin_dir / 'vina'
     
+    print(f"[Vina Setup] Looking for binary at: {vina_bin_path}", file=sys.stderr)
+    print(f"[Vina Setup] Binary exists: {vina_bin_path.exists()}", file=sys.stderr)
+    
     if vina_bin_path.exists():
+        # Check if executable
+        import stat
+        file_stat = os.stat(vina_bin_path)
+        is_executable = bool(file_stat.st_mode & stat.S_IXUSR)
+        print(f"[Vina Setup] Binary executable: {is_executable}", file=sys.stderr)
+        
         try:
             result = subprocess.run([str(vina_bin_path), '--version'], 
                                   capture_output=True, text=True, timeout=5)
+            print(f"[Vina Setup] Return code: {result.returncode}", file=sys.stderr)
+            print(f"[Vina Setup] Stdout: {result.stdout[:200]}", file=sys.stderr)
+            print(f"[Vina Setup] Stderr: {result.stderr[:200]}", file=sys.stderr)
+            
             if 'AutoDock Vina' in result.stdout or 'AutoDock Vina' in result.stderr:
-                # Print to stderr so it doesn't interfere with JSON stdout
-                print(f"[Vina] Using binary at {vina_bin_path}", file=sys.stderr)
+                print(f"[Vina] ✅ Using binary at {vina_bin_path}", file=sys.stderr)
                 return True
+            else:
+                print(f"[Vina] Binary didn't return Vina version info", file=sys.stderr)
         except Exception as e:
             print(f"[Vina] Binary found but not working: {str(e)}", file=sys.stderr)
+            import traceback
+            print(f"[Vina] Traceback: {traceback.format_exc()}", file=sys.stderr)
+    else:
+        print(f"[Vina Setup] Binary not found at {vina_bin_path}", file=sys.stderr)
+        # List what's in the vina_bin directory
+        if vina_bin_dir.exists():
+            print(f"[Vina Setup] vina_bin directory contents:", file=sys.stderr)
+            for item in vina_bin_dir.iterdir():
+                print(f"  - {item.name}", file=sys.stderr)
+        else:
+            print(f"[Vina Setup] vina_bin directory doesn't exist!", file=sys.stderr)
     
     # Check for Python vina package
     try:
@@ -485,18 +510,10 @@ def run_vina_docking(receptor_pdbqt, ligand_pdbqt, config):
             print(f"[Vina] Reducing poses from {n_poses} to 5 (memory optimization)", file=sys.stderr)
             n_poses = 5
         
-        # Validate grid size
-        min_size = min(size['x'], size['y'], size['z'])
-        if min_size < 15:
-            print(f"[Vina Warning] Small grid box ({min_size}Å)", file=sys.stderr)
-        except Exception:
-            pass
-        
         # Validate exhaustiveness
         if exhaustiveness < 1:
             print(f"[Vina Warning] Exhaustiveness too low ({exhaustiveness}), setting to 1", file=sys.stderr)
             exhaustiveness = 1
-        if exhaustiveness > 32:
         
         # Output file
         output_file = ligand_pdbqt.replace('.pdbqt', '_out.pdbqt')
